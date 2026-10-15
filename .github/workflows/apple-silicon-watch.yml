@@ -97,7 +97,7 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$COPR_KERNEL_URL")
           if [ "$code" = "200" ]; then
             checks=1
-            echo "- @asahi/kernel COPR now has a fedora-46 chroot — bumping compose to releasever 46 is unblocked." >> /tmp/checks.md
+            echo "- \`@asahi/kernel\` COPR now has a fedora-46 chroot — bumping compose to releasever 46 is unblocked." >> /tmp/checks.md
           fi
           if [ "$checks" -eq 1 ]; then
             found=1
