@@ -66,7 +66,7 @@ jobs:
             # NOTE: GITHUB_TOKEN cannot use the Search API; use plain REST.
             prs=$(gh api "repos/${repo}/pulls?state=closed&per_page=30&sort=updated&direction=desc" \
                   | jq --arg s "$since_ts" -r \
-                  '.[] | select(.merged_at != null and .merged_at > $s) | "- [PR #\(.number): \(.title)](\(.html_url)) (@\(.user.login))"' || true)
+                  '.[] | select(.merged_at != null and .merged_at > $s) | "- [PR #\(.number): \(.title)](\(.html_url)) (by \(.user.login))"' || true)
             rels=$(gh api "repos/${repo}/releases?per_page=5" \
                   | jq --arg s "$since_ts" -r \
                   '.[] | select(.published_at > $s) | "- [Release \(.tag_name)](\(.html_url)) \(.name)"' || true)
