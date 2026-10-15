@@ -35,11 +35,11 @@ env:
     fedora-asahi-remix-atomic-desktops/images
     tuna-os/fisherman
     nix-community/nixos-apple-silicon
-  MANIFESTS_URL: https://forge.fedoraproject.org/atomic-desktops/config.git
-  MANIFESTS_BRANCH: f45
+  # Upstream base image our Containerfile layers on (kinoite:<BASE_TAG>).
+  BASE_REPO: fedora-asahi-remix-atomic-desktops/kinoite
+  BASE_TAG: "44"
+  NEXT_TAG: "45"
   COPR_KERNEL_URL: https://download.copr.fedorainfracloud.org/results/@asahi/kernel/fedora-46-aarch64/
-  # Repo whose compose workflow carries the manifest pin being watched.
-  TARGET_REPO: dracinn/bazzite-asahi
 
 jobs:
   watch:
@@ -81,18 +81,33 @@ jobs:
             fi
           done
 
-          # Manifest pin drift: is our compose pin behind upstream?
+          # Project checks on the upstream base image our layer tracks.
           {
             echo "### Project checks"
           } > /tmp/checks.md
           checks=0
-          pin=$(gh api "repos/${TARGET_REPO}/contents/.github/workflows/compose-j313.yml?ref=main" \
-                --jq '.content' 2>/dev/null | base64 -d \
-                | grep -oE 'checkout [0-9a-f]{40}' | awk '{print $2}' || true)
-          upstream=$(git ls-remote "$MANIFESTS_URL" "refs/heads/${MANIFESTS_BRANCH}" 2>/dev/null | awk '{print $1}' || true)
-          if [ -n "$pin" ] && [ -n "$upstream" ] && [ "$pin" != "$upstream" ]; then
+
+          # Upstream publishes kinoite:<BASE_TAG> daily — staleness means
+          # their pipeline broke, which we inherit on our next build.
+          upstream_mod=$(curl -s --max-time 20 \
+            "https://quay.io/api/v1/repository/${BASE_REPO}/tag/?specificTag=${BASE_TAG}" \
+            | jq -r '.tags[0].last_modified // empty' 2>/dev/null || true)
+          if [ -n "$upstream_mod" ]; then
+            age_s=$(( $(date -u +%s) - $(date -u -d "$upstream_mod" +%s) ))
+            if [ "$age_s" -gt 259200 ]; then
+              checks=1
+              echo "- \`${BASE_REPO}:${BASE_TAG}\` last built $((age_s/86400))d ago — upstream daily build may be broken." >> /tmp/checks.md
+            fi
+          fi
+
+          # New Fedora release tag upstream = time to evaluate bumping
+          # BASE_IMAGE in the Containerfile.
+          next_tag=$(curl -s --max-time 20 \
+            "https://quay.io/api/v1/repository/${BASE_REPO}/tag/?specificTag=${NEXT_TAG}" \
+            | jq -r '.tags[0].name // empty' 2>/dev/null || true)
+          if [ "$next_tag" = "$NEXT_TAG" ]; then
             checks=1
-            echo "- fedora-atomic-desktops \`${MANIFESTS_BRANCH}\` moved to \`${upstream:0:7}\`; our pin is \`${pin:0:7}\` — consider re-pinning." >> /tmp/checks.md
+            echo "- upstream published \`${BASE_REPO}:${NEXT_TAG}\` — Fedora ${NEXT_TAG} base available; evaluate bumping BASE_IMAGE." >> /tmp/checks.md
           fi
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$COPR_KERNEL_URL")
           if [ "$code" = "200" ]; then
