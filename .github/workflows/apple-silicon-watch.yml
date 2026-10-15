@@ -1,0 +1,129 @@
+name: Apple Silicon Watch
+
+# Daily scan of Apple Silicon Linux ecosystem repositories. Opens or
+# updates a digest issue in THIS repository only when there is new
+# activity or a project-relevant upstream change (manifest pin drift,
+# COPR chroots). Scheduled workflows only run on the default branch —
+# this file must live on main.
+
+on:
+  schedule:
+    - cron: '7 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  WATCH_REPOS: >-
+    aurora-silicon/linux
+    omacom/linux-aurora
+    omacom/omarchy-mac-installer
+    omarchy-mac/omarchy-pkgs-aarch64
+    ublue-os/bazzite
+    AsahiLinux/linux
+    AsahiLinux/asahi-installer
+    AsahiLinux/asahi-installer-data
+    AsahiLinux/m1n1
+    AsahiLinux/muvm
+    AsahiLinux/speakersafetyd
+    aurora-silicon/u-boot
+    aurora-silicon/aurora-steam-native
+    tuna-os/bootc-installer-asahi
+    tuna-os/fisherman
+    nix-community/nixos-apple-silicon
+  MANIFESTS_URL: https://forge.fedoraproject.org/atomic-desktops/config.git
+  MANIFESTS_BRANCH: f45
+  COPR_KERNEL_URL: https://download.copr.fedorainfracloud.org/results/@asahi/kernel/fedora-46-aarch64/
+  # Repo whose compose workflow carries the manifest pin being watched.
+  TARGET_REPO: dracinn/bazzite-asahi
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect activity and open digest issue
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          # The runner invokes bash -e; disable it so one flaky call
+          # cannot kill the whole watch — calls are individually guarded.
+          set +e
+          since_ts=$(date -u -d '26 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+          today=$(date -u '+%Y-%m-%d')
+          body=/tmp/watch-body.md
+          found=0
+
+          {
+            echo "## Apple Silicon Watch — ${today}"
+            echo
+          } > "$body"
+
+          for repo in $WATCH_REPOS; do
+            # NOTE: GITHUB_TOKEN cannot use the Search API; use plain REST.
+            prs=$(gh api "repos/${repo}/pulls?state=closed&per_page=30&sort=updated&direction=desc" \
+                  | jq --arg s "$since_ts" -r \
+                  '.[] | select(.merged_at != null and .merged_at > $s) | "- [PR #\(.number): \(.title)](\(.html_url)) (@\(.user.login))"' || true)
+            rels=$(gh api "repos/${repo}/releases?per_page=5" \
+                  | jq --arg s "$since_ts" -r \
+                  '.[] | select(.published_at > $s) | "- [Release \(.tag_name)](\(.html_url)) \(.name)"' || true)
+            if [ -n "${prs}${rels}" ]; then
+              found=1
+              {
+                echo "### \`${repo}\`"
+                [ -n "$prs" ]  && printf '%s\n' "$prs"
+                [ -n "$rels" ] && printf '%s\n' "$rels"
+                echo
+              } >> "$body"
+            fi
+          done
+
+          # Manifest pin drift: is our compose pin behind upstream?
+          {
+            echo "### Project checks"
+          } > /tmp/checks.md
+          checks=0
+          pin=$(gh api "repos/${TARGET_REPO}/contents/.github/workflows/compose-j313.yml?ref=apple-silicon" \
+                --jq '.content' 2>/dev/null | base64 -d \
+                | grep -oE 'checkout [0-9a-f]{40}' | awk '{print $2}' || true)
+          upstream=$(git ls-remote "$MANIFESTS_URL" "refs/heads/${MANIFESTS_BRANCH}" 2>/dev/null | awk '{print $1}' || true)
+          if [ -n "$pin" ] && [ -n "$upstream" ] && [ "$pin" != "$upstream" ]; then
+            checks=1
+            echo "- fedora-atomic-desktops \`${MANIFESTS_BRANCH}\` moved to \`${upstream:0:7}\`; our pin is \`${pin:0:7}\` — consider re-pinning." >> /tmp/checks.md
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$COPR_KERNEL_URL")
+          if [ "$code" = "200" ]; then
+            checks=1
+            echo "- @asahi/kernel COPR now has a fedora-46 chroot — bumping compose to releasever 46 is unblocked." >> /tmp/checks.md
+          fi
+          if [ "$checks" -eq 1 ]; then
+            found=1
+            cat /tmp/checks.md >> "$body"
+            echo >> "$body"
+          fi
+
+          if [ "$found" -eq 0 ]; then
+            echo "No new activity; no digest issue needed."
+            exit 0
+          fi
+
+          {
+            echo "---"
+            echo "_Automated watch for dracinn/bazzite-asahi. Edit WATCH_REPOS in .github/workflows/apple-silicon-watch.yml._"
+          } >> "$body"
+
+          gh label create watch -R "$REPO" --color "7057ff" --force >/dev/null 2>&1 || true
+          title="Apple Silicon Watch — ${today}"
+          existing=$(gh api "repos/${REPO}/issues?state=all&per_page=30" \
+                     | jq --arg t "$title" -r \
+                     '[.[] | select(.title == $t)][0].number // empty' || true)
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" -R "$REPO" --title "$title" \
+              --body-file "$body"
+            gh issue reopen "$existing" -R "$REPO" >/dev/null 2>&1 || true
+          else
+            gh issue create -R "$REPO" --title "$title" --label watch \
+              --body-file "$body"
+          fi
