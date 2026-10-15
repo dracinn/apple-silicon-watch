@@ -32,6 +32,7 @@ env:
     aurora-silicon/u-boot
     aurora-silicon/aurora-steam-native
     tuna-os/bootc-installer-asahi
+    fedora-asahi-remix-atomic-desktops/images
     tuna-os/fisherman
     nix-community/nixos-apple-silicon
   MANIFESTS_URL: https://forge.fedoraproject.org/atomic-desktops/config.git
