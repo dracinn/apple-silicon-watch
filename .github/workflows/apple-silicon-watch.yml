@@ -85,7 +85,7 @@ jobs:
             echo "### Project checks"
           } > /tmp/checks.md
           checks=0
-          pin=$(gh api "repos/${TARGET_REPO}/contents/.github/workflows/compose-j313.yml?ref=apple-silicon" \
+          pin=$(gh api "repos/${TARGET_REPO}/contents/.github/workflows/compose-j313.yml?ref=main" \
                 --jq '.content' 2>/dev/null | base64 -d \
                 | grep -oE 'checkout [0-9a-f]{40}' | awk '{print $2}' || true)
           upstream=$(git ls-remote "$MANIFESTS_URL" "refs/heads/${MANIFESTS_BRANCH}" 2>/dev/null | awk '{print $1}' || true)
