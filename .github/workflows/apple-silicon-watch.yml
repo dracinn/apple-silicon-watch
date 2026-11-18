@@ -33,6 +33,7 @@ env:
     aurora-silicon/aurora-steam-native
     aurora-silicon/fex
     aurora-silicon/speakerguardd
+    aurora-silicon/fedora-aurora
     tuna-os/bootsahi
     tuna-os/tunaOS
     fedora-asahi-remix-atomic-desktops/images
