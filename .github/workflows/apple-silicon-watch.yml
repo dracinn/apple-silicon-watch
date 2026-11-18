@@ -31,15 +31,24 @@ env:
     AsahiLinux/speakersafetyd
     aurora-silicon/u-boot
     aurora-silicon/aurora-steam-native
-    tuna-os/bootc-installer-asahi
+    aurora-silicon/fex
+    aurora-silicon/speakerguardd
+    tuna-os/bootsahi
+    tuna-os/tunaOS
     fedora-asahi-remix-atomic-desktops/images
     tuna-os/fisherman
     nix-community/nixos-apple-silicon
+    AsahiLinux/asahi-fix27
+    AsahiLinux/asahi-audio
+    AsahiLinux/avd-fw
+    AsahiLinux/hidpipe
+    AsahiLinux/fex-emu-rootfs-generator
+    FEX-Emu/FEX
   # Upstream base image our Containerfile layers on (kinoite:<BASE_TAG>).
   BASE_REPO: fedora-asahi-remix-atomic-desktops/kinoite
   BASE_TAG: "44"
   NEXT_TAG: "45"
-  COPR_KERNEL_URL: https://download.copr.fedorainfracloud.org/results/@asahi/kernel/fedora-46-aarch64/
+
 
 jobs:
   watch:
@@ -109,10 +118,14 @@ jobs:
             checks=1
             echo "- upstream published \`${BASE_REPO}:${NEXT_TAG}\` — Fedora ${NEXT_TAG} base available; evaluate bumping BASE_IMAGE." >> /tmp/checks.md
           fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$COPR_KERNEL_URL")
+          # COPR check stays one Fedora release ahead of NEXT_TAG so it
+          # fires when upstream branches the cycle after next.
+          copr_rel=$((NEXT_TAG + 1))
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            "https://download.copr.fedorainfracloud.org/results/@asahi/kernel/fedora-${copr_rel}-aarch64/")
           if [ "$code" = "200" ]; then
             checks=1
-            echo "- \`@asahi/kernel\` COPR now has a fedora-46 chroot — bumping compose to releasever 46 is unblocked." >> /tmp/checks.md
+            echo "- \`@asahi/kernel\` COPR now has a fedora-${copr_rel} chroot — bumping compose to releasever ${copr_rel} is unblocked." >> /tmp/checks.md
           fi
           if [ "$checks" -eq 1 ]; then
             found=1
@@ -132,7 +145,7 @@ jobs:
 
           gh label create watch -R "$REPO" --color "7057ff" --force >/dev/null 2>&1 || true
           title="Apple Silicon Watch — ${today}"
-          existing=$(gh api "repos/${REPO}/issues?state=all&per_page=30" \
+          existing=$(gh api "repos/${REPO}/issues?state=all&per_page=100" \
                      | jq --arg t "$title" -r \
                      '[.[] | select(.title == $t)][0].number // empty' || true)
           if [ -n "$existing" ]; then
@@ -143,3 +156,10 @@ jobs:
             gh issue create -R "$REPO" --title "$title" --label watch \
               --body-file "$body"
           fi
+          # Digests are superseded daily — close older open watch issues
+          # so the issue list only ever carries the latest digest.
+          gh api "repos/${REPO}/issues?state=open&labels=watch&per_page=100" \
+            | jq -r --arg t "$title" '.[] | select(.title != $t) | .number' \
+            | while read -r n; do
+                gh issue close "$n" -R "$REPO" >/dev/null 2>&1 || true
+              done
