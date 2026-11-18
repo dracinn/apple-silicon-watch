@@ -148,13 +148,22 @@ jobs:
           existing=$(gh api "repos/${REPO}/issues?state=all&per_page=100" \
                      | jq --arg t "$title" -r \
                      '[.[] | select(.title == $t)][0].number // empty' || true)
+          published=0
           if [ -n "$existing" ]; then
-            gh issue edit "$existing" -R "$REPO" --title "$title" \
-              --body-file "$body"
-            gh issue reopen "$existing" -R "$REPO" >/dev/null 2>&1 || true
+            if gh issue edit "$existing" -R "$REPO" --title "$title" \
+              --body-file "$body"; then
+              gh issue reopen "$existing" -R "$REPO" >/dev/null 2>&1 || true
+              published=1
+            fi
           else
-            gh issue create -R "$REPO" --title "$title" --label watch \
-              --body-file "$body"
+            if gh issue create -R "$REPO" --title "$title" --label watch \
+              --body-file "$body"; then
+              published=1
+            fi
+          fi
+          if [ "$published" -eq 0 ]; then
+            echo "Digest publication failed; leaving older digests open."
+            exit 1
           fi
           # Digests are superseded daily — close older open watch issues
           # so the issue list only ever carries the latest digest.
