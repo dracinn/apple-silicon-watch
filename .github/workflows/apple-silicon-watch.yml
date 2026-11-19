@@ -34,6 +34,7 @@ env:
     aurora-silicon/fex
     aurora-silicon/speakerguardd
     aurora-silicon/fedora-aurora
+    aurora-silicon/aurora-installer
     tuna-os/bootsahi
     tuna-os/tunaOS
     fedora-asahi-remix-atomic-desktops/images
